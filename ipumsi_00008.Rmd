@@ -1,0 +1,82 @@
+---
+title: "Data analysis answers"
+author: "Kev"
+date: '2022-06-02'
+output:
+  html_document: default
+  word_document: default
+---
+
+
+```{r,message=FALSE}
+
+library(ggplot2)
+library(tidyr)
+library(ivreg)
+library(dplyr)
+library(fixest)
+library(doBy)
+library(stargazer)
+library(car)
+library(modelsummary)
+
+```
+
+## Data loading and processing
+```{r}
+data<-read.csv("C:/Users/hp/Desktop/Programming/Tasks/ipumsi_00008.csv")
+
+data <- data %>% dplyr::na_if(99) #Doing this because this data uses 99 a lot for "don't know"
+data<-filter(data, YRSCHOOL<90)  #Several complicated
+#Creating dummy variables
+data$URBAN <- ifelse(data$URBAN == 2, 1, 0)
+
+#Create new variables
+data<-transform(data, CHILDREN=CHBORNF+CHBORNM)
+data<-transform(data, CMR=(CHBORNF+CHBORNM-CHSURVF-CHSURVM)/CHILDREN)
+
+## Making sure that women with children are the only ones part of the analysis
+data <- filter(data, CHILDREN>0) 
+```
+
+```{r}
+## Viewing the summary
+stargazer(data[c("CMR","AGE","URBAN","YRSCHOOL","YRSCHOOL_SP","EMPSTAT_SP")], type = "text")
+```
+
+
+## OLS Regression
+The OLS regression formula is CMR~YRSCHOOL+AGE+URBAN+EMPSTAT_SP. The control variable of my choice is employment status of the spouse which i assume has a negative association with the response variable. The better the employment status would means that they can afford good healthcare for their children.
+
+## Building the regression model
+```{r}
+m_ols<-lm(CMR~YRSCHOOL+AGE+URBAN+EMPSTAT_SP, data=data)
+msummary(m_ols)
+```
+```{r}
+#coefficient plot(Estimates and their 95% confidence intervals)
+
+coefplot(m_ols,main="Effect on CMR")
+```
+According to the OLS, the relation between mortality rate and women education is likely to be biased as there could be error terms that are related to certain predictor variables.
+
+## 2-Step Linear Regression
+```{r}
+#Checking association of spouse's education
+first_IV<-lm(YRSCHOOL~YRSCHOOL_SP+AGE+URBAN+ELECTRIC, data=data)
+msummary(first_IV)
+```
+Run and display the results of the second stage 
+```{r}
+m_iv<-ivreg(CMR~YRSCHOOL+AGE+URBAN+EMPSTAT_SP|YRSCHOOL_SP+AGE
+         +URBAN+ELECTRIC,data=data)
+msummary(m_iv)
+
+```
+## Conclusion
+The value of the error terms is assumed to be independent of the predictor variables in the ordinary least square approach. When this assumption is disproved, we can use this strategy to solve the problem. This implies that a secondary predictor is related to the problematic predictor but not to the error term. In 2SLS, the aim is to dissolve correlation between the error terms and the dependent variable. Using the comparison below we can see the urban's coefficient changes from negative to positive, which indicates it was the problematic variable. Resolving this issue lead to an increase in the intercept constant.  
+```{r}
+list_comparison<-list(OLS=m_ols,IV=m_iv)
+stargazer(list_comparison,type = "text")
+```
+
